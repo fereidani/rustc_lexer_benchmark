@@ -59,7 +59,6 @@ impl<'a> Cursor<'a> {
     /// If requested position doesn't exist, `EOF_CHAR` is returned.
     /// However, getting `EOF_CHAR` doesn't always mean actual end of file,
     /// it should be checked with `is_eof` method.
-
     #[no_panic]
     pub fn first(&self) -> char {
         // `.next()` optimizes better than `.nth(0)`
@@ -76,7 +75,6 @@ impl<'a> Cursor<'a> {
     }
 
     /// Peeks the third symbol from the input stream without consuming it.
-
     #[no_panic]
     pub fn third(&self) -> char {
         // `.next()` optimizes better than `.nth(2)`
@@ -108,7 +106,6 @@ impl<'a> Cursor<'a> {
     }
 
     /// Moves to the next character.
-
     #[no_panic]
     pub fn bump(&mut self) -> Option<char> {
         let c = self.chars.next()?;
@@ -134,7 +131,6 @@ impl<'a> Cursor<'a> {
 
     #[no_panic]
     /// Bumps the cursor if the next character is either of the two expected characters.
-
     pub fn bump_if_either(&mut self, byte1: char, byte2: char) -> bool {
         let mut chars = self.chars.clone();
         if let Some(c) = chars.next()
@@ -148,9 +144,8 @@ impl<'a> Cursor<'a> {
 
     /// Moves to a substring by a number of bytes.
 
-    #[no_panic]
     pub fn bump_bytes(&mut self, n: usize) {
-        self.chars = self.as_str().get(n..).unwrap_or("").chars();
+        self.chars = self.as_str()[n..].chars();
     }
 
     /// Eats symbols while predicate returns true or until the end of file is reached.

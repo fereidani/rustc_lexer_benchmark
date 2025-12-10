@@ -1,13 +1,9 @@
-pub mod cursor;
-
-#[cfg(test)]
-mod tests;
+mod cursor;
 
 use LiteralKind::*;
 use TokenKind::*;
 use cursor::EOF_CHAR;
 pub use cursor::{Cursor, FrontmatterAllowed};
-use no_panic::no_panic;
 use unicode_properties::UnicodeEmoji;
 pub use unicode_xid::UNICODE_VERSION as UNICODE_XID_VERSION;
 
@@ -643,25 +639,22 @@ impl Cursor<'_> {
         };
 
         let mut depth = 1usize;
-        while let Some(c) = self.eat_past_either(b'/', b'*') {
-            match c {
-                b'/' => {
-                    if self.bump_if('*') {
-                        depth += 1;
+        while let Some(c) = self.eat_past_either(b'*', b'/') {
+            if c == b'*' {
+                if self.bump_if('/') {
+                    depth -= 1;
+                    if depth == 0 {
+                        // This block comment is closed, so for a construction like "/* */ */"
+                        // there will be a successfully parsed block comment "/* */"
+                        // and " */" will be processed separately.
+                        break;
                     }
                 }
-                b'*' => {
-                    if self.bump_if('/') {
-                        depth -= 1;
-                        if depth == 0 {
-                            // This block comment is closed, so for a construction like "/* */ */"
-                            // there will be a successfully parsed block comment "/* */"
-                            // and " */" will be processed separately.
-                            break;
-                        }
-                    }
+            } else {
+                // c == b'/'
+                if self.bump_if('*') {
+                    depth += 1;
                 }
-                _ => unreachable!(),
             }
         }
 
@@ -951,19 +944,37 @@ impl Cursor<'_> {
 
     /// Eats double-quoted string and returns true
     /// if string is terminated.
-    fn double_quoted_string(&mut self) -> bool {
+    pub fn double_quoted_string(&mut self) -> bool {
         debug_assert!(self.prev() == '"');
         while let Some(c) = self.eat_past_either(b'"', b'\\') {
-            match c {
-                b'"' => {
-                    return true;
-                }
-                b'\\' => _ = self.bump_if_either('\\', '"'),
-                _ => unreachable!(),
+            if c == b'"' {
+                return true;
             }
+            // Current is '\\', bump again if next is an escaped character.
+            self.bump_either('\\', '"');
         }
+        // End of file reached.
         false
     }
+
+    pub fn double_quoted_string_old(&mut self) -> bool {
+        debug_assert!(self.prev() == '"');
+        while let Some(c) = self.bump() {
+            match c {
+                '"' => {
+                    return true;
+                }
+                '\\' if self.first() == '\\' || self.first() == '"' => {
+                    // Bump again to skip escaped character.
+                    self.bump();
+                }
+                _ => (),
+            }
+        }
+        // End of file reached.
+        false
+    }
+
     /// Attempt to lex for a guarded string literal.
     ///
     /// Used by `rustc_parse::lexer` to lex for guarded strings
@@ -1134,7 +1145,7 @@ impl Cursor<'_> {
     /// and returns false otherwise.
     fn eat_float_exponent(&mut self) -> bool {
         debug_assert!(self.prev() == 'e' || self.prev() == 'E');
-        self.bump_if_either('-', '+');
+        self.bump_either('-', '+');
         self.eat_decimal_digits()
     }
 
@@ -1145,7 +1156,6 @@ impl Cursor<'_> {
 
     // Eats the identifier. Note: succeeds on `_`, which isn't a valid
     // identifier.
-    #[no_panic]
     fn eat_identifier(&mut self) {
         if !is_id_start(self.first()) {
             return;

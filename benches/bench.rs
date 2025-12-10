@@ -1,8 +1,9 @@
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use rustc_lexer::{Cursor, FrontmatterAllowed};
 use std::fs;
 use std::hint::black_box;
 use std::path::PathBuf;
+
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use rustc_lexer::{Cursor, FrontmatterAllowed};
 
 fn bench_cursor_first(c: &mut Criterion) {
     let input = "fn main() { println!(\"Hello, world!\"); }";
@@ -118,13 +119,142 @@ fn bench_strip_shebang(c: &mut Criterion) {
 fn bench_tokenize(c: &mut Criterion) {
     let input = "/* my source file */ fn main() { println!(\"zebra\"); }\n";
     let mut group = c.benchmark_group("tokenize");
-    group.throughput(Throughput::Bytes(input.len() as u64));
 
     group.bench_function("simple_function", |b| {
         b.iter(|| {
             let tokens: Vec<_> =
                 rustc_lexer::tokenize(black_box(input), FrontmatterAllowed::No).collect();
             black_box(tokens)
+        })
+    });
+
+    let lengths = [0usize, 4, 8, 16, 32, 64, 128, 256];
+    let mut seed = 12345u32;
+    let mut random_ascii = || {
+        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        ((seed % 26) as u8 + b'A') as char
+    };
+    let mut random_strings = Vec::new();
+    let mut rarely_escaped_strings = Vec::new();
+    let mut moderately_escaped_strings = Vec::new();
+    for &len in &lengths {
+        let mut s = String::with_capacity(len + 2);
+        s.push('"');
+        for _ in 0..len {
+            s.push(random_ascii());
+        }
+        s.push('"');
+        random_strings.push(s);
+    }
+    for &len in &lengths {
+        let mut s = String::with_capacity(len + 2);
+        s.push('"');
+        for i in 0..len {
+            let c = if len / 2 == i { '\\' } else { random_ascii() };
+            s.push(c);
+        }
+        s.push('"');
+        rarely_escaped_strings.push(s);
+    }
+    for &len in &lengths {
+        // first middle last
+        let mut s = String::with_capacity(len * 2 + 2);
+        s.push('"');
+        for i in 0..len {
+            if i == 1 || i == len - 1 {
+                s.push('\\')
+            }
+            if len / 2 == i {
+                s.push_str("\\\"");
+            } else {
+                s.push(random_ascii());
+            }
+        }
+        s.push('"');
+        moderately_escaped_strings.push(s);
+    }
+
+    // rarely escaped string
+    for (i, &len) in lengths.iter().enumerate() {
+        if len < 4 {
+            continue;
+        }
+        let input = &rarely_escaped_strings[i];
+        group.bench_function(format!("rarely_escaped_string_{}", len), |b| {
+            b.iter(|| {
+                let mut token_count = 0;
+                for token in rustc_lexer::tokenize(black_box(input), FrontmatterAllowed::No) {
+                    black_box(token);
+                    token_count += 1;
+                }
+                assert_eq!(token_count, 1);
+                black_box(token_count)
+            })
+        });
+    }
+
+    // moderately escaped string
+    for (i, &len) in lengths.iter().enumerate() {
+        if len < 4 {
+            continue;
+        }
+        let input = &moderately_escaped_strings[i];
+        group.bench_function(format!("moderately_escaped_string_{}", len), |b| {
+            b.iter(|| {
+                let mut token_count = 0;
+                for token in rustc_lexer::tokenize(black_box(input), FrontmatterAllowed::No) {
+                    black_box(token);
+                    token_count += 1;
+                }
+                assert_eq!(token_count, 1);
+                black_box(token_count)
+            })
+        });
+    }
+
+    // Specific tests for each size
+    for (i, &len) in lengths.iter().enumerate() {
+        let input = &random_strings[i];
+        group.bench_function(format!("random_ascii_string_{}", len), |b| {
+            b.iter(|| {
+                let mut token_count = 0;
+                for token in rustc_lexer::tokenize(black_box(input), FrontmatterAllowed::No) {
+                    black_box(token);
+                    token_count += 1;
+                }
+                assert_eq!(token_count, 1);
+                black_box(token_count)
+            })
+        });
+    }
+
+    let short_strings_input = r#""a""#;
+    group.bench_function("short_string", |b| {
+        b.iter(|| {
+            let mut token_count = 0;
+            for token in
+                rustc_lexer::tokenize(black_box(short_strings_input), FrontmatterAllowed::No)
+            {
+                black_box(token);
+                token_count += 1;
+            }
+            assert_eq!(token_count, 1);
+            black_box(token_count)
+        })
+    });
+
+    let long_strings_input = r#""this is a very long string that contains many characters""#;
+    group.bench_function("long_strings", |b| {
+        b.iter(|| {
+            let mut token_count = 0;
+            for token in
+                rustc_lexer::tokenize(black_box(long_strings_input), FrontmatterAllowed::No)
+            {
+                black_box(token);
+                token_count += 1;
+            }
+            assert_eq!(token_count, 1);
+            black_box(token_count)
         })
     });
 
@@ -140,7 +270,7 @@ fn example() {
     let single = "x";
 }
 "#;
-    group.bench_function("strings", |b| {
+    group.bench_function("strings_in_function", |b| {
         b.iter(|| {
             let tokens: Vec<_> =
                 rustc_lexer::tokenize(black_box(strings_input), FrontmatterAllowed::No).collect();

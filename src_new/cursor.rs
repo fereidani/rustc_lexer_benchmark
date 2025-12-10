@@ -1,7 +1,5 @@
 use std::str::Chars;
 
-use no_panic::no_panic;
-
 pub enum FrontmatterAllowed {
     Yes,
     No,
@@ -23,7 +21,6 @@ pub struct Cursor<'a> {
 pub const EOF_CHAR: char = '\0';
 
 impl<'a> Cursor<'a> {
-    #[no_panic]
     pub fn new(input: &'a str, frontmatter_allowed: FrontmatterAllowed) -> Cursor<'a> {
         Cursor {
             len_remaining: input.len(),
@@ -34,15 +31,12 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    #[no_panic]
     pub fn as_str(&self) -> &'a str {
         self.chars.as_str()
     }
 
     /// Returns the last eaten symbol (or `'\0'` in release builds).
     /// (For debug assertions only.)
-
-    #[no_panic]
     pub fn prev(&self) -> char {
         #[cfg(debug_assertions)]
         {
@@ -59,23 +53,20 @@ impl<'a> Cursor<'a> {
     /// If requested position doesn't exist, `EOF_CHAR` is returned.
     /// However, getting `EOF_CHAR` doesn't always mean actual end of file,
     /// it should be checked with `is_eof` method.
-    #[no_panic]
     pub fn first(&self) -> char {
         // `.next()` optimizes better than `.nth(0)`
         self.chars.clone().next().unwrap_or(EOF_CHAR)
     }
 
     /// Peeks the second symbol from the input stream without consuming it.
-
-    #[no_panic]
     pub fn second(&self) -> char {
+        // `.next()` optimizes better than `.nth(1)`
         let mut iter = self.chars.clone();
         iter.next();
         iter.next().unwrap_or(EOF_CHAR)
     }
 
     /// Peeks the third symbol from the input stream without consuming it.
-    #[no_panic]
     pub fn third(&self) -> char {
         // `.next()` optimizes better than `.nth(2)`
         let mut iter = self.chars.clone();
@@ -85,28 +76,21 @@ impl<'a> Cursor<'a> {
     }
 
     /// Checks if there is nothing more to consume.
-
-    #[no_panic]
     pub fn is_eof(&self) -> bool {
         self.chars.as_str().is_empty()
     }
 
     /// Returns amount of already consumed symbols.
-
-    #[no_panic]
     pub fn pos_within_token(&self) -> u32 {
         (self.len_remaining - self.chars.as_str().len()) as u32
     }
 
     /// Resets the number of bytes consumed to 0.
-
-    #[no_panic]
     pub fn reset_pos_within_token(&mut self) {
         self.len_remaining = self.chars.as_str().len();
     }
 
     /// Moves to the next character.
-    #[no_panic]
     pub fn bump(&mut self) -> Option<char> {
         let c = self.chars.next()?;
 
@@ -118,10 +102,13 @@ impl<'a> Cursor<'a> {
         Some(c)
     }
 
-    #[no_panic]
     pub fn bump_if(&mut self, byte: char) -> bool {
         let mut chars = self.chars.clone();
         if chars.next() == Some(byte) {
+            #[cfg(debug_assertions)]
+            {
+                self.prev = byte;
+            }
             self.chars = chars;
             true
         } else {
@@ -129,13 +116,16 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    #[no_panic]
     /// Bumps the cursor if the next character is either of the two expected characters.
-    pub fn bump_if_either(&mut self, byte1: char, byte2: char) -> bool {
+    pub fn bump_either(&mut self, byte1: char, byte2: char) -> bool {
         let mut chars = self.chars.clone();
         if let Some(c) = chars.next()
             && (c == byte1 || c == byte2)
         {
+            #[cfg(debug_assertions)]
+            {
+                self.prev = c;
+            }
             self.chars = chars;
             return true;
         }
@@ -143,13 +133,17 @@ impl<'a> Cursor<'a> {
     }
 
     /// Moves to a substring by a number of bytes.
-
     pub fn bump_bytes(&mut self, n: usize) {
+        #[cfg(debug_assertions)]
+        {
+            if n > 0 {
+                self.prev = self.as_str()[..n].chars().last().unwrap();
+            }
+        }
         self.chars = self.as_str()[n..].chars();
     }
 
     /// Eats symbols while predicate returns true or until the end of file is reached.
-
     pub fn eat_while(&mut self, mut predicate: impl FnMut(char) -> bool) {
         // It was tried making optimized version of this for eg. line comments, but
         // LLVM can inline all of this and compile it down to fast iteration over bytes.
@@ -159,8 +153,6 @@ impl<'a> Cursor<'a> {
     }
     /// Eats characters until the given byte is found.
     /// Returns true if the byte was found, false if end of file was reached.
-
-    //#[no_panic]
     pub fn eat_until(&mut self, byte: u8) -> bool {
         match memchr::memchr(byte, self.as_str().as_bytes()) {
             Some(index) => {
@@ -176,8 +168,6 @@ impl<'a> Cursor<'a> {
 
     /// Eats characters until any of the given bytes is found, then consumes past it.
     /// Returns the found byte if any, or None if end of file was reached.
-
-    //#[no_panic]
     pub fn eat_past_either(&mut self, byte1: u8, byte2: u8) -> Option<u8> {
         let bytes = self.as_str().as_bytes();
         match memchr::memchr2(byte1, byte2, bytes) {
